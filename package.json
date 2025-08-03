@@ -1,0 +1,16 @@
+{
+  "name": "buildmart-notification-server",
+  "version": "1.0.0",
+  "description": "Server to send FCM notifications for BuildMart.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.0"
+  }
+}
