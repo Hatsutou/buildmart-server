@@ -2,13 +2,9 @@ const express = require("express");
 const admin = require("firebase-admin");
 const bodyParser = require("body-parser");
 
-// Lấy service account key từ biến môi trường của Render
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-
-// LẤY PROJECT ID TỪ SERVICE ACCOUNT
 const projectId = serviceAccount.project_id;
 
-// KHỞI TẠO VỚI PROJECT ID TƯỜNG MINH
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   projectId: projectId, 
@@ -43,15 +39,14 @@ app.post("/send-order-notification", requireApiKey, async (req, res) => {
       return res.status(200).send("User has no token, notification not sent.");
     }
 
+    // Đã xóa dòng "sound: 'default'" khỏi đây
     const payload = {
       notification: {
         title: `Cập nhật đơn hàng #${orderId.substring(0, 6).toUpperCase()}`,
         body: `Đơn hàng của bạn đã chuyển sang trạng thái: ${newStatus}`,
-        sound: "default",
       },
     };
 
-    // Đã sửa lại hàm send để rõ ràng hơn
     await admin.messaging().send({
         token: fcmToken,
         notification: payload.notification,
