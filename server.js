@@ -39,7 +39,6 @@ app.post("/send-order-notification", requireApiKey, async (req, res) => {
       return res.status(200).send("User has no token, notification not sent.");
     }
 
-    // Đã xóa dòng "sound: 'default'" khỏi đây
     const payload = {
       notification: {
         title: `Cập nhật đơn hàng #${orderId.substring(0, 6).toUpperCase()}`,
@@ -51,6 +50,18 @@ app.post("/send-order-notification", requireApiKey, async (req, res) => {
         token: fcmToken,
         notification: payload.notification,
     });
+
+    // ### THAY ĐỔI DUY NHẤT NẰM Ở ĐÂY ###
+    // Sau khi gửi thành công, lưu một bản sao vào collection con 'notifications'
+    await admin.firestore()
+        .collection('users').doc(userId)
+        .collection('notifications').add({
+            title: payload.notification.title,
+            body: payload.notification.body,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(), // Thêm dấu thời gian
+            isRead: false, // Thêm trạng thái đã đọc/chưa đọc
+        });
+    // ### KẾT THÚC THAY ĐỔI ###
 
     res.status(200).send("Notification sent successfully!");
   } catch (error) {
