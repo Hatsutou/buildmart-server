@@ -5,15 +5,19 @@ const bodyParser = require("body-parser");
 // Lấy service account key từ biến môi trường của Render
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
+// LẤY PROJECT ID TỪ SERVICE ACCOUNT
+const projectId = serviceAccount.project_id;
+
+// KHỞI TẠO VỚI PROJECT ID TƯỜNG MINH
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
+  projectId: projectId, 
 });
 
 const app = express();
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
-// Lấy API Key bí mật từ biến môi trường của Render
 const API_KEY = process.env.SECRET_API_KEY;
 
 const requireApiKey = (req, res, next) => {
@@ -47,7 +51,12 @@ app.post("/send-order-notification", requireApiKey, async (req, res) => {
       },
     };
 
-    await admin.messaging().sendToDevice(fcmToken, payload);
+    // Đã sửa lại hàm send để rõ ràng hơn
+    await admin.messaging().send({
+        token: fcmToken,
+        notification: payload.notification,
+    });
+
     res.status(200).send("Notification sent successfully!");
   } catch (error) {
     console.error("Error sending notification:", error);
