@@ -29,49 +29,60 @@ const requireApiKey = (req, res, next) => {
 };
 
 // =======================================================
-// ENDPOINT 1: GỬI THÔNG BÁO KHI CẬP NHẬT ĐƠN HÀNG
+// ENDPOINT 1: XỬ LÝ TẤT CẢ CÁC SỰ KIỆN THÔNG BÁO
 // =======================================================
-app.post("/send-order-notification", requireApiKey, async (req, res) => {
-  const { userId, newStatus, orderId } = req.body;
-  if (!userId || !newStatus || !orderId) {
-    return res.status(400).send("Missing required data");
-  }
-
-  try {
-    const userDoc = await admin.firestore().collection("users").doc(userId).get();
-    const fcmToken = userDoc.data()?.fcmToken;
-
-    if (!fcmToken) {
-      return res.status(200).send("User has no token, notification not sent.");
+app.post("/trigger-event-notification", requireApiKey, async (req, res) => {
+    const { eventType, data } = req.body;
+    if (!eventType || !data) {
+        return res.status(400).send("Missing eventType or data");
     }
 
-    const payload = {
-      notification: {
-        title: `Cập nhật đơn hàng #${orderId.substring(0, 6).toUpperCase()}`,
-        body: `Đơn hàng của bạn đã chuyển sang trạng thái: ${newStatus}`,
-      },
-    };
+    const { orderId, userId, customerName, reason } = data;
+    const shortOrderId = orderId.substring(0, 6).toUpperCase();
 
-    await admin.messaging().send({
-      token: fcmToken,
-      notification: payload.notification,
-    });
+    try {
+        switch (eventType) {
+            case 'ORDER_CREATED':
+                // 1. Gửi cho khách hàng
+                await sendAndSaveNotification(userId, 
+                    `Đơn hàng #${shortOrderId} đã được tạo thành công`, 
+                    'Đơn hàng của bạn đã được ghi nhận vào hệ thống.'
+                );
+                // 2. Gửi cho tất cả admin
+                await notifyAllAdmins(
+                    `Yêu cầu xử lý đơn hàng #${shortOrderId}`, 
+                    `Đơn hàng mới từ khách hàng ${customerName}.`
+                );
+                break;
 
-    await admin.firestore()
-      .collection('users').doc(userId)
-      .collection('notifications').add({
-        title: payload.notification.title,
-        body: payload.notification.body,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        isRead: false,
-      });
+            case 'STATUS_SHIPPING':
+                await sendAndSaveNotification(userId,
+                    `Đơn hàng #${shortOrderId} đang được vận chuyển`,
+                    'Hãy chú ý điện thoại nhé, shipper sẽ sớm liên lạc với bạn.'
+                );
+                break;
 
-    res.status(200).send("Notification sent successfully!");
-  } catch (error) {
-    console.error("Error sending notification:", error);
-    res.status(500).send("Failed to send notification");
-  }
+            case 'STATUS_DELIVERED':
+                await sendAndSaveNotification(userId,
+                    `Đơn hàng #${shortOrderId} đã được giao thành công!`,
+                    'Cảm ơn bạn đã mua sắm tại BuildMart. Hy vọng bạn hài lòng với sản phẩm.'
+                );
+                break;
+
+            case 'STATUS_CANCELLED':
+                await sendAndSaveNotification(userId,
+                    `Đơn hàng #${shortOrderId} của bạn đã bị hủy`,
+                    `Lý do: ${reason}. Vui lòng liên hệ BuildMart để được hỗ trợ.`
+                );
+                break;
+        }
+        res.status(200).send("Notifications triggered successfully!");
+    } catch (error) {
+        console.error(`Error triggering notifications for event ${eventType}:`, error);
+        res.status(500).send("Failed to trigger notifications");
+    }
 });
+
 
 // =======================================================
 // ENDPOINT 2: XỬ LÝ TIN NHẮN CHO CHATBOT AI
@@ -126,7 +137,6 @@ app.post("/chat", requireApiKey, async (req, res) => {
     }
 });
 
-
 // --- HÀM HỖ TRỢ: TÌM KIẾM SẢN PHẨM TRÊN FIRESTORE ---
 async function _searchProductsInFirestore(query) {
     console.log(`AI is searching for: ${query}`);
@@ -149,6 +159,21 @@ async function _searchProductsInFirestore(query) {
     } catch (e) {
         console.error('Firestore search error:', e);
         return { products: 'Đã có lỗi khi tìm kiếm sản phẩm.' };
+    }
+}
+
+// --- HÀM HỖ TRỢ MỚI ---
+// Hàm gửi thông báo và lưu lại
+async function sendAndSaveNotification(userId, title, body) {
+    const userDoc = await admin.firestore().collection("users").doc(userId).get();
+    const fcmToken = userDoc.data()?.fcmToken;
+
+    if (fcmToken) {
+        const payload = { notification: { title, body } };
+        await admin.messaging().send({ token: fcmToken, notification: payload.notification });
+        await admin.firestore().collection('users').doc(userId).collection('notifications').add({
+            title, body, timestamp: admin.firestore.FieldValue.serverTimestamp(), isRead: false,
+        });
     }
 }
 
