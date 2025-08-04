@@ -98,11 +98,13 @@ app.post("/trigger-event-notification", requireApiKey, async (req, res) => {
         return res.status(400).send("Missing eventType or data");
     }
 
-    const { orderId, userId, customerName, reason } = data;
+    const { orderId, userId, customerName, reason, products } = data;
     const shortOrderId = orderId.substring(0, 6).toUpperCase();
+    const db = admin.firestore();
 
     try {
         switch (eventType) {
+
             case 'ORDER_CREATED':
                 await sendAndSaveNotification(userId, 
                     `Đơn hàng #${shortOrderId} đã được tạo thành công`, 
@@ -113,29 +115,57 @@ app.post("/trigger-event-notification", requireApiKey, async (req, res) => {
                     `Đơn hàng mới từ khách hàng ${customerName || 'không tên'}.`
                 );
                 break;
+
             case 'STATUS_SHIPPING':
                 await sendAndSaveNotification(userId,
                     `Đơn hàng #${shortOrderId} đang được vận chuyển`,
                     'Hãy chú ý điện thoại nhé, đơn vị vận chuyển của chúng tôi sẽ sớm liên lạc với bạn.'
                 );
+                // ### LOGIC MỚI: Trừ số lượng tồn kho ###
+                if (products && Array.isArray(products)) {
+                    const batch = db.batch();
+                    products.forEach(item => {
+                        const productRef = db.collection('products').doc(item.id);
+                        const quantityToDecrease = item.quantity;
+                        batch.update(productRef, { 
+                            stockQuantity: admin.firestore.FieldValue.increment(-quantityToDecrease) 
+                        });
+                    });
+                    await batch.commit();
+                }
                 break;
+
             case 'STATUS_DELIVERED':
                 await sendAndSaveNotification(userId,
                     `Đơn hàng #${shortOrderId} đã được giao thành công!`,
                     'Cảm ơn bạn đã mua sắm tại BuildMart. Hy vọng bạn hài lòng với sản phẩm.'
                 );
+                // ### LOGIC MỚI: Tăng số lượng đã bán ###
+                if (products && Array.isArray(products)) {
+                    const batch = db.batch();
+                    products.forEach(item => {
+                        const productRef = db.collection('products').doc(item.id);
+                        const quantitySold = item.quantity;
+                        batch.update(productRef, { 
+                            sold: admin.firestore.FieldValue.increment(quantitySold) 
+                        });
+                    });
+                    await batch.commit();
+                }
                 break;
+
             case 'STATUS_CANCELLED':
                 await sendAndSaveNotification(userId,
                     `Đơn hàng #${shortOrderId} của bạn đã bị hủy`,
                     `Lý do: ${reason}. Vui lòng liên hệ BuildMart để được hỗ trợ.`
                 );
                 break;
+                
         }
-        res.status(200).send("Notifications triggered successfully!");
+        res.status(200).send("Notifications and inventory updated successfully!");
     } catch (error) {
-        console.error(`Error triggering notifications for event ${eventType}:`, error);
-        res.status(500).send("Failed to trigger notifications");
+        console.error(`Error processing event ${eventType}:`, error);
+        res.status(500).send("Failed to process event");
     }
 });
 
