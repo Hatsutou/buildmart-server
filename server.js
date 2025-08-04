@@ -58,7 +58,7 @@ app.post("/trigger-event-notification", requireApiKey, async (req, res) => {
             case 'STATUS_SHIPPING':
                 await sendAndSaveNotification(userId,
                     `Đơn hàng #${shortOrderId} đang được vận chuyển`,
-                    'Hãy chú ý điện thoại nhé, đơn vị vân chuyển của chúng tôi sẽ sớm liên lạc với bạn.'
+                    'Hãy chú ý điện thoại nhé, đơn vị vận chuyển của chúng tôi sẽ sớm liên lạc với bạn.'
                 );
                 break;
 
