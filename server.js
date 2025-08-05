@@ -231,7 +231,13 @@ app.post("/create_vnpay_url", requireApiKey, (req, res) => {
     const orderId = req.body.orderId;
     const amount = req.body.amount;
     const bankCode = req.body.bankCode || ''; // Có thể để trống
-    const orderInfo = req.body.orderInfo || 'Thanh toan don hang';
+    
+    // ### BẮT ĐẦU SỬA ĐỔI ###
+    let orderInfo = req.body.orderInfo || 'Thanh toan don hang';
+    // Loại bỏ dấu và ký tự đặc biệt để đảm bảo tính hợp lệ
+    orderInfo = orderInfo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+    // ### KẾT THÚC SỬA ĐỔI ###
+
     const locale = 'vn';
 
     let vnp_Params = {
@@ -243,7 +249,7 @@ app.post("/create_vnpay_url", requireApiKey, (req, res) => {
         'vnp_TxnRef': orderId,
         'vnp_OrderInfo': orderInfo,
         'vnp_Amount': amount * 100, // VNPay yêu cầu nhân 100
-        'vnp_ReturnUrl': 'https://your-app-domain/vnpay_return', // Sẽ sửa sau
+        'vnp_ReturnUrl': 'https://buildmart.doan/payment_return', // Dùng một domain tùy chỉnh cho deep link
         'vnp_IpAddr': ipAddr,
         'vnp_CreateDate': createDate,
     };
@@ -261,6 +267,58 @@ app.post("/create_vnpay_url", requireApiKey, (req, res) => {
 
     res.status(200).json({ paymentUrl: vnpUrl });
 });
+
+// =======================================================
+// ENDPOINT 4: NHẬN KẾT QUẢ THANH TOÁN TỪ VNPAY (IPN)
+// =======================================================
+app.get("/vnpay_ipn", async (req, res) => {
+    let vnp_Params = req.query;
+    const secureHash = vnp_Params['vnp_SecureHash'];
+
+    delete vnp_Params['vnp_SecureHash'];
+    delete vnp_Params['vnp_SecureHashType'];
+
+    vnp_Params = Object.fromEntries(Object.entries(vnp_Params).sort());
+    const secretKey = process.env.VNP_HASHSECRET;
+    const signData = qs.stringify(vnp_Params, { encode: false });
+    const hmac = crypto.createHmac("sha512", secretKey);
+    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
+
+    if (secureHash === signed) {
+        const orderId = vnp_Params['vnp_TxnRef'];
+        const rspCode = vnp_Params['vnp_ResponseCode'];
+
+        // Kiểm tra xem giao dịch có thành công không (mã '00')
+        if (rspCode === '00') {
+            try {
+                // Cập nhật trạng thái đơn hàng trong Firestore
+                // Quan trọng: Cần đảm bảo đơn hàng này chưa được xử lý
+                const orderRef = admin.firestore().collection('orders').doc(orderId);
+                const orderDoc = await orderRef.get();
+                if (orderDoc.exists && orderDoc.data().status === 'waiting_for_payment') {
+                    await orderRef.update({ status: 'pending' }); // Chuyển sang chờ xử lý
+
+                    // TODO: Gửi thông báo cho admin về đơn hàng mới cần xử lý
+
+                    console.log(`Order ${orderId} updated successfully.`);
+                    res.status(200).json({ RspCode: '00', Message: 'Success' });
+                } else {
+                    console.log(`Order ${orderId} already processed or not found.`);
+                    res.status(200).json({ RspCode: '02', Message: 'Order already confirmed' });
+                }
+            } catch (e) {
+                console.error("Error updating order:", e);
+                res.status(200).json({ RspCode: '99', Message: 'Unknown error' });
+            }
+        } else {
+            // Giao dịch thất bại, có thể xóa đơn hàng tạm hoặc cập nhật trạng thái 'failed'
+            res.status(200).json({ RspCode: '00', Message: 'Success' });
+        }
+    } else {
+        res.status(200).json({ RspCode: '97', Message: 'Checksum failed' });
+    }
+});
+
 
 // --- KHỞI ĐỘNG SERVER ---
 app.listen(PORT, () => {
