@@ -221,7 +221,17 @@ app.post("/chat", requireApiKey, async (req, res) => {
 // ENDPOINT 3: TẠO URL THANH TOÁN VNPAY
 // =======================================================
 app.post("/create_vnpay_url", requireApiKey, (req, res) => {
-    const ipAddr = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.socket.remoteAddress || req.connection.socket.remoteAddress;
+    // ### BẮT ĐẦU SỬA ĐỔI ###
+    // Lấy và xử lý địa chỉ IP để đảm bảo chỉ có 1 IP duy nhất
+    let ipAddr = req.headers['x-forwarded-for'] || 
+                 req.connection.remoteAddress || 
+                 req.socket.remoteAddress || 
+                 req.connection.socket.remoteAddress;
+
+    if (ipAddr && ipAddr.includes(',')) {
+        ipAddr = ipAddr.split(',')[0].trim();
+    }
+    // ### KẾT THÚC SỬA ĐỔI ###
     
     const tmnCode = process.env.VNP_TMNCODE;
     const secretKey = process.env.VNP_HASHSECRET;
