@@ -2,6 +2,9 @@ const express = require("express");
 const admin = require("firebase-admin");
 const bodyParser = require("body-parser");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const moment = require('moment'); // Thêm moment
+const qs = require('qs'); // Thêm qs
+const crypto = require("crypto"); // Thêm crypto
 
 // --- KHỞI TẠO CÁC DỊCH VỤ ---
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
@@ -212,6 +215,51 @@ app.post("/chat", requireApiKey, async (req, res) => {
         console.error("Chatbot Error:", error);
         res.status(500).json({ error: "AI service failed" });
     }
+});
+
+// =======================================================
+// ENDPOINT 3: TẠO URL THANH TOÁN VNPAY
+// =======================================================
+app.post("/create_vnpay_url", requireApiKey, (req, res) => {
+    const ipAddr = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.socket.remoteAddress || req.connection.socket.remoteAddress;
+    
+    const tmnCode = process.env.VNP_TMNCODE;
+    const secretKey = process.env.VNP_HASHSECRET;
+    let vnpUrl = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"; // URL test của VNPay
+    
+    const createDate = moment(new Date()).format('YYYYMMDDHHmmss');
+    const orderId = req.body.orderId;
+    const amount = req.body.amount;
+    const bankCode = req.body.bankCode || ''; // Có thể để trống
+    const orderInfo = req.body.orderInfo || 'Thanh toan don hang';
+    const locale = 'vn';
+
+    let vnp_Params = {
+        'vnp_Version': '2.1.0',
+        'vnp_Command': 'pay',
+        'vnp_TmnCode': tmnCode,
+        'vnp_Locale': locale,
+        'vnp_CurrCode': 'VND',
+        'vnp_TxnRef': orderId,
+        'vnp_OrderInfo': orderInfo,
+        'vnp_Amount': amount * 100, // VNPay yêu cầu nhân 100
+        'vnp_ReturnUrl': 'https://your-app-domain/vnpay_return', // Sẽ sửa sau
+        'vnp_IpAddr': ipAddr,
+        'vnp_CreateDate': createDate,
+    };
+    if(bankCode !== ''){
+        vnp_Params['vnp_BankCode'] = bankCode;
+    }
+
+    vnp_Params = Object.fromEntries(Object.entries(vnp_Params).sort());
+
+    const signData = qs.stringify(vnp_Params, { encode: false });
+    const hmac = crypto.createHmac("sha512", secretKey);
+    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex"); 
+    vnp_Params['vnp_SecureHash'] = signed;
+    vnpUrl += '?' + qs.stringify(vnp_Params, { encode: false });
+
+    res.status(200).json({ paymentUrl: vnpUrl });
 });
 
 // --- KHỞI ĐỘNG SERVER ---
