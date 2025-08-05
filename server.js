@@ -270,6 +270,10 @@ app.post("/create_vnpay_url", requireApiKey, (req, res) => {
     vnp_Params = Object.fromEntries(Object.entries(vnp_Params).sort());
 
     const signData = qs.stringify(vnp_Params, { encode: false });
+
+    // THÊM DÒNG NÀY ĐỂ IN RA CHUỖI GỐC
+    console.log('--- VNPAY DEBUG DATA TO SIGN ---', signData);
+
     const hmac = crypto.createHmac("sha512", secretKey);
     const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex"); 
     vnp_Params['vnp_SecureHash'] = signed;
